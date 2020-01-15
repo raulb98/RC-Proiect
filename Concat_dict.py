@@ -3,3 +3,4 @@ def concat_dict(dict):
     for key,val in dict.items():
         rez += dict[key]
     return rez
+
