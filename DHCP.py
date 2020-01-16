@@ -8,6 +8,9 @@ import logging
 import Lease
 import tkinter as tk
 import tkinter.scrolledtext as ScrolledText
+import datetime
+import struct
+import math
 
 logging.basicConfig(filename='app.log', filemode='w')
 
@@ -48,25 +51,33 @@ class GUI(tk.Frame):
         t1.start()
 
     def run_comm(self):
+        now1 = datetime.datetime.now()
         self.com_level.decode_message(concat_dict(dhcp_discover))
         self.com_level.send('discover')
-
+        
         message_recv = self.com_level.receive('offer')
-
         self.com_level.decode_message(message_recv)
-        if self.com_level.level[1] is True:
-              assign_ip(dhcp_requestsel, self.com_level.my_ip_bytes[-1])
-              self.com_level.decode_message(concat_dict(dhcp_requestsel))
-              self.com_level.send('request')
+
+        #self.com_level.decode_message(concat_dict(dhcp_decline))
+        #self.com_level.send('decline')
+
+        assign_ip(dhcp_requestsel, self.com_level.my_ip_bytes[-1])
+        now2 = datetime.datetime.now()
+        delta = now2 - now1
+
+        delta_bytes = math.floor(delta.total_seconds())
+        assign_seconds(dhcp_requestsel,hex(delta_bytes))
+        self.com_level.decode_message(concat_dict(dhcp_requestsel))
+        self.com_level.send('request')
 
         message_recv = self.com_level.receive('ack')
         self.com_level.decode_message(message_recv)
-        lease_time = int(self.com_level.lease_time, base=16)
-        self.lease_entry.delete(0,'end')
-        
-        dhcp_lease = Lease.lease(lease_time, self.sock, concat_dict(dhcp_requestsel))
-        dhcp_lease.reconfigure()
 
+        lease_time = int(self.com_level.lease_time, base=16)
+        dhcp_lease = Lease.lease(lease_time, self.sock, concat_dict(dhcp_request_renew))
+        dhcp_lease.reconfigure()
+        dhcp_lease.run()
+        self.release_comm()
 
     def stop_execution(self):
         self.thread_comm.join()
