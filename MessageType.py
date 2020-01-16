@@ -8,6 +8,7 @@ DHCP_DATA = {
                 'xid': 0,
                 'hlen': 0,
                 'yiaddr': 0,
+                'secs': 0,
                 'options' : {}
             },
             'request' : {
@@ -15,6 +16,7 @@ DHCP_DATA = {
                 'xid': 0,
                 'hlen': 0,
                 'yiaddr': 0,
+                'secs': 0,
                 'options' : {}
             },
             'ack' : {
@@ -22,6 +24,23 @@ DHCP_DATA = {
                 'xid': 0,
                 'hlen': 0,
                 'yiaddr': 0,
+                'secs': 0,
+                'options' : {}
+            },
+            'decline' :{
+                'op': 0,
+                'xid': 0,
+                'hlen': 0,
+                'yiaddr': 0,
+                'secs': 0,
+                'options' : {}
+            },
+            'nak' :{
+                'op': 0,
+                'xid': 0,
+                'hlen': 0,
+                'yiaddr': 0,
+                'secs': 0,
                 'options' : {}
             }
         }
@@ -30,20 +49,20 @@ DHCP_MSGS = {
             'Discover' : None,
             'Offer' : None,
             'Request' : None,
-            'Ack' : None
+            'Ack' : None,
+            'Decline' : None,
+            'Nak' : None
         }
 
 class Communication_Level():
     def __init__(self,socket):
         self.socket = socket
-        self.level = [False for i in range(0,4)]
         self.lease_time = 0
         self.data_on_each_level = DHCP_DATA
         self.messages = DHCP_MSGS
         self.my_ip_bytes = []
         self.my_ip = []
         self.requested_ip = None
-        
         logging.warning("Communcation established")
 
 
@@ -57,7 +76,6 @@ class Communication_Level():
                     b -= 87
                 elif b >= 48 :
                     b -= 48
-                #print(b)
 
                 result = result + pow(16,idx)*b
                 idx -= 1
@@ -93,7 +111,8 @@ class Communication_Level():
                       '00' : ['Pad',None],
                       '36' : ['DHCP Server ID',None],
                       'a8' : ['Unassigned',None],
-                      '3a' : ['Renewal Time',None]
+                      '3a' : ['Renewal Time',None],
+                      '36' : ['Server Identifier',None]
            }
            list_options = {'00' : 4,
                            '35' : 4,
@@ -106,6 +125,7 @@ class Communication_Level():
                            '36' : 4,
                            'a8' : 4,
                            '3a' : 4,
+                           '36' : 4,
                            'ff' : None}
 
            o1 = 0
@@ -133,7 +153,6 @@ class Communication_Level():
             if type == '01':
                 self.messages['Discover'] = message
                 infos = unpack_options(splited_message[1])
-                self.level[0] = True
                 logging.warning(r'DHCP_Discover Message is about to be Broadcasted')
                 time.sleep(1)
 
@@ -145,6 +164,7 @@ class Communication_Level():
                 self.data_on_each_level['offer']['xid'] = message[9:17]
                 self.data_on_each_level['offer']['hlen'] = message[4:6]
                 self.data_on_each_level['offer']['yiaddr'] = message[32:40]
+                self.data_on_each_level['offer']['secs'] = message[18:23]
                 self.my_ip.append(self.transform_to_ip(self.data_on_each_level['offer']['yiaddr']))
                 self.my_ip_bytes.append(self.data_on_each_level['offer']['yiaddr'])
                 logging.warning('IP received {}'.format(self.my_ip[-1]))
@@ -152,8 +172,6 @@ class Communication_Level():
 
                 if infos[1] is not None:
                     self.lease_time = infos[1]
-                    
-                self.level[1] = True
 
             elif type == '03':
                 logging.warning('DHCP_Request is about to be sent')
@@ -163,8 +181,9 @@ class Communication_Level():
                 self.data_on_each_level['request']['xid'] = message[9:17]
                 self.data_on_each_level['request']['hlen'] = message[4:6]
                 self.data_on_each_level['request']['yiaddr'] = message[32:40]
+                self.data_on_each_level['request']['secs'] = message[18:23]
                 infos = unpack_options(splited_message[1])
-                self.level[2] = True
+
 
             elif type == '05':
                 logging.warning('DHCP_Ack has been received')
@@ -173,9 +192,20 @@ class Communication_Level():
                 self.data_on_each_level['ack']['xid'] = message[9:17]
                 self.data_on_each_level['ack']['hlen'] = message[4:6]
                 self.data_on_each_level['ack']['yiaddr'] = message[32:40]
-                print(self.data_on_each_level['ack'])
+                self.data_on_each_level['ack']['secs'] = message[18:23]
                 infos = unpack_options(splited_message[1])
-                self.level[3] = True
+
+
+            elif type == '04':
+                logging.warning('DHCP_Decline has been Send to Servers')
+                self.messages['Decline'] = message
+                self.data_on_each_level['decline']['op'] = message[0:2]
+                self.data_on_each_level['decline']['xid'] = message[9:17]
+                self.data_on_each_level['decline']['hlen'] = message[4:6]
+                self.data_on_each_level['decline']['yiaddr'] = message[32:40]
+                self.data_on_each_level['decline']['secs'] = message[18:23]
+                infos = unpack_options(splited_message[1])
+
 
         if message_tp == '01':
             write(self,message,'01')
@@ -189,6 +219,9 @@ class Communication_Level():
         elif message_tp == '05':
             write(self,message,'05')
             return 'ack'
+        elif message_tp == '04':
+            write(self,message,'04')
+            return 'decline'
 
     def send(self,type):
         if type == 'discover':
@@ -199,6 +232,11 @@ class Communication_Level():
             message = self.messages['Request']
             sender = SendMessage(message,self.socket)
             sender.sendTo()
+        elif type == 'decline':
+            message = self.messages['Decline']
+            sender = SendMessage(message,self.socket)
+            sender.sendTo()
+
 
     def receive(self,type):
         message = RecvMessage(self.socket)
@@ -241,3 +279,14 @@ class RecvMessage():
 
 def assign_ip(message,xid):
     message['xid'] = xid
+
+def assign_seconds(message,sec):
+    secs = str(sec[2:len(sec)])
+
+    while len(secs) < 4:
+        secs = '0' + secs
+
+    message['secs'] = str.encode(secs)
+    
+def assign_ciaddr(message,ciaddr):
+    message['ciaddr'] = ciaddr
